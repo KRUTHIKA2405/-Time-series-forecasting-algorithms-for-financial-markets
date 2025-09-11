@@ -1,0 +1,6 @@
+[
+{"symbol": "AAPL", "interval": "5m", "period": "60d"},
+{"symbol": "MSFT", "interval": "5m", "period": "60d"},
+{"symbol": "^GSPC", "interval": "1d", "period": "5y"},
+{"symbol": "BTC-USD", "interval": "1m", "period": "20d"}
+]

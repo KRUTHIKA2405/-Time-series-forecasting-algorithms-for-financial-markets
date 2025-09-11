@@ -1,0 +1,11 @@
+fastapi
+uvicorn
+pandas
+numpy
+scikit-learn
+tensorflow
+influxdb-client
+pydantic
+yfinance
+tenacity
+python-dateutil
