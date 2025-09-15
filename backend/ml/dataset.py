@@ -1,55 +1,65 @@
-import pandas as pd
 import numpy as np
+import pandas as pd
 from sklearn.preprocessing import StandardScaler
-from .window import make_windows
+from typing import Tuple
 
 
-class Prepared:
-def __init__(self, Xtr, ytr, Xv, yv, Xte, yte, scaler: StandardScaler):
-self.Xtr, self.ytr, self.Xv, self.yv, self.Xte, self.yte, self.scaler = Xtr, ytr, Xv, yv, Xte, yte, scaler
+class PreparedDataset:
+    def __init__(self, Xtr, ytr, Xv, yv, Xte, yte, scaler: StandardScaler):
+        self.Xtr, self.ytr = Xtr, ytr
+        self.Xv, self.yv = Xv, yv
+        self.Xte, self.yte = Xte, yte
+        self.scaler = scaler
 
 
-def prepare_dataset(bars_df: pd.DataFrame,
-features=("close","volume"),
-label_col: str = "close",
-label_mode: str = "returns", # "levels" or "returns"
-lookback: int = 128,
-horizon: int = 1,
-val_ratio: float = 0.1,
-test_ratio: float = 0.1) -> Prepared:
-df = bars_df[list(features)].dropna().astype(float)
-if label_mode == "returns":
-df_ret = df.copy()
-df_ret[label_col] = df_ret[label_col].pct_change().fillna(0.0)
-target_series = df_ret[label_col].values.reshape(-1,1)
-else:
-target_series = df[label_col].values.reshape(-1,1)
+def make_windows(
+    arr: np.ndarray, lookback: int, horizon: int
+) -> Tuple[np.ndarray, np.ndarray]:
+    """
+    Turn an array into overlapping windows.
+    arr: shape (T, F)
+    returns: X shape (N, lookback, F), y shape (N, horizon)
+    """
+    X, y = [], []
+    for i in range(len(arr) - lookback - horizon + 1):
+        X.append(arr[i : i + lookback])
+        y.append(arr[i + lookback : i + lookback + horizon, 0])  # assume first col is label
+    return np.array(X), np.array(y)
 
 
-scaler = StandardScaler()
-Xscaled = scaler.fit_transform(df.values)
+def prepare_dataset(
+    df: pd.DataFrame,
+    features: Tuple[str, ...] = ("close", "volume"),
+    label_mode: str = "returns",
+    lookback: int = 128,
+    horizon: int = 1,
+    splits: Tuple[float, float, float] = (0.7, 0.15, 0.15),
+) -> PreparedDataset:
+    """
+    Prepare train/val/test sets from raw bars.
+    label_mode: "returns" = predict log returns, "levels" = predict raw levels.
+    """
 
+    df = df.copy().dropna()
+    if label_mode == "returns":
+        df["target"] = np.log(df["close"]).diff().shift(-horizon)
+    else:
+        df["target"] = df["close"].shift(-horizon)
+    df = df.dropna()
 
-X, _ = make_windows(Xscaled, lookback, horizon)
+    data = df[list(features) + ["target"]].values
+    scaler = StandardScaler()
+    data_scaled = scaler.fit_transform(data)
 
+    X, y = make_windows(data_scaled, lookback, horizon)
 
-if label_mode == "returns":
-ysrc = target_series
-y_list = []
-for i in range(len(ysrc) - lookback - horizon + 1):
-y_list.append(ysrc[i+lookback:i+lookback+horizon].sum(axis=0))
-y = np.asarray(y_list)
-else:
-y_list = []
-for i in range(len(target_series) - lookback - horizon + 1):
-y_list.append(target_series[i+lookback:i+lookback+horizon].flatten())
-y = np.asarray(y_list)
+    N = len(X)
+    ntr = int(N * splits[0])
+    nv = int(N * splits[1])
+    nte = N - ntr - nv
 
+    Xtr, ytr = X[:ntr], y[:ntr]
+    Xv, yv = X[ntr : ntr + nv], y[ntr : ntr + nv]
+    Xte, yte = X[ntr + nv :], y[ntr + nv :]
 
-n = len(X)
-n_test = int(n * test_ratio)
-n_val = int(n * val_ratio)
-Xtr, ytr = X[:n-n_val-n_test], y[:n-n_val-n_test]
-Xv, yv = X[n-n_val-n_test:n-n_test], y[n-n_val-n_test:n-n-test]
-Xte, yte = X[n-n_test:], y[n-n_test:]
-return Prepared(Xtr,ytr,Xv,yv,Xte,yte, scaler)
+    return PreparedDataset(Xtr, ytr, Xv, yv, Xte, yte, scaler)
